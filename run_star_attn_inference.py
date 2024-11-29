@@ -46,7 +46,7 @@ def init_distributed():
     else:
         rank = 0
         world_size = 1
-
+        print(f'[run_star_attn_inference.init_distributed] Rank: {rank}, World size: {world_size}')
     return rank, world_size
 
 
@@ -143,6 +143,8 @@ def main(
         input_data = get_resume_point(input_data, output_file)
         output_file_mode = 'at'
 
+    print("stop_words: ", stop_words)
+
     # Load model
     model = load_model(
         model_path,
@@ -160,7 +162,14 @@ def main(
     # setting buffering=1 to force to dump the output after every line, so that we can see intermediate generations
     with open(output_file, output_file_mode, encoding='utf-8', buffering=1) as fout:
         for input_sample in tqdm(input_data, total=len(input_data)):
-            pred = model(prompt_context=input_sample['input_context'], prompt_query=input_sample['input_query'])
+
+            input_context = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n" + \
+                            "{context}\n\n".format(context=input_sample['input_context'])
+
+            prompt_query = "Question: " + "\n{question}\n".format(question=input_sample['input_query']) + "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
+            pred = model(prompt_context=input_context, prompt_query=prompt_query)
+            # pred = model(prompt_context=input_sample['input_context'], prompt_query=input_sample['input_query'])
             if rank == 0:
                 fout.write(
                     json.dumps(

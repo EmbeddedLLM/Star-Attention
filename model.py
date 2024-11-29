@@ -129,6 +129,7 @@ class DistributedInferenceBaseModel:
             generated token ids
         """
         output_seq = None
+        previous_output_text = ""
         for _ in range(self.max_new_tokens):
             with torch.no_grad():
                 outputs = self.model(
@@ -151,7 +152,15 @@ class DistributedInferenceBaseModel:
             # Update the input_ids and position_ids for the next iteration
             input_ids = next_tokens.unsqueeze(0)
             position_ids = torch.tensor([[position_ids[-1, -1] + 1]]).to(position_ids)
+            
+            # cur_text = self.tokenizer.decode(output_seq.unsqueeze(0)[0].detach().cpu().numpy().tolist())
+            # if self.local_rank == 0:
+            #     print(cur_text[len(previous_output_text):], end="")
+            # if cur_text[len(previous_output_text):] in self.stop_words:
+            #     break
+            # previous_output_text=cur_text
 
+        print("")
         return output_seq.unsqueeze(0)
 
     def _get_output_text(self, output, truncate_texts=[]):
@@ -261,7 +270,11 @@ class StarAttentionModel(DistributedInferenceBaseModel):
         # Phase 2: Process query with global attention
         qry_ids = self._tokenize(prompt_query)
         qry_position_ids = torch.arange(ctx_len, ctx_len + qry_ids.shape[-1]).unsqueeze(0).to(self.model.device)
+
         output = self._generate_output(qry_ids, qry_position_ids, kv_rank)
+
+        # if self.local_rank == 0:
+        #     print("input prompt len: ", ctx_len + qry_ids.shape[-1], "\toutput prompt len: ", self.max_new_tokens)
 
         # Get the generated text
         generated_text = self._get_output_text(output)
@@ -331,6 +344,10 @@ class RingAttentionModel(DistributedInferenceBaseModel):
         qry_position_ids = torch.arange(ctx_len, ctx_len + qry_ids.shape[-1]).unsqueeze(0).to(self.model.device)
         output = self._generate_output(qry_ids, qry_position_ids, kv_rank)
 
+        
+        if self.rank == 0:
+            print("input prompt len: ", ctx_len + qry_ids.shape[-1], "\toutput prompt len: ", self.max_new_tokens)
+
         # Get the generated text
         generated_text = self._get_output_text(output)
         return {'text': [generated_text]}
@@ -377,6 +394,7 @@ class DenseAttentionModel:
         # Remove the input from the generated text
         generated_text = self.tokenizer.decode(output[0].detach().cpu().numpy().tolist())
 
+        # print(generated_text)
         for t in truncate_texts:
             t = t.strip()
             if t and generated_text.startswith(t):
